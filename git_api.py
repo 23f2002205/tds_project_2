@@ -70,51 +70,51 @@ def get_github_file_sha(token, repo, file_path, branch="main"):
         return None
 
 
-def github_write_file(token, repo, file_path, new_content, branch="main"):
-    """
-    Writes (creates or updates) a file in GitHub.
+# def github_write_file(token, repo, file_path, new_content, branch="main"):
+#     """
+#     Writes (creates or updates) a file in GitHub.
 
-    Args:
-    - token (str): GitHub personal access token.
-    - repo (str): Repository name (e.g., "username/repo").
-    - file_path (str): Path to the file in the repo.
-    - new_content (str): Content to write to the file.
-    - sha (str, optional): SHA of the existing file (None if new).
-    - branch (str): Branch name (default: "main").
+#     Args:
+#     - token (str): GitHub personal access token.
+#     - repo (str): Repository name (e.g., "username/repo").
+#     - file_path (str): Path to the file in the repo.
+#     - new_content (str): Content to write to the file.
+#     - sha (str, optional): SHA of the existing file (None if new).
+#     - branch (str): Branch name (default: "main").
 
-    Returns:
-    - str: Success message.
-    """
-    url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
-    headers = {"Authorization": f"token {token}",
-               "Accept": "application/vnd.github.v3+json"}
+#     Returns:
+#     - str: Success message.
+#     """
+#     url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+#     headers = {"Authorization": f"token {token}",
+#                "Accept": "application/vnd.github.v3+json"}
 
-    sha = get_github_file_sha(token, repo, file_path, branch)
-    if isinstance(new_content, str):
-        encoded_content = base64.b64encode(
-            new_content.encode()).decode()  # If it's a string, encode it
-    else:
-        encoded_content = base64.b64encode(
-            new_content).decode()  # If it's bytes, use directly
+#     sha = get_github_file_sha(token, repo, file_path, branch)
+#     if isinstance(new_content, str):
+#         encoded_content = base64.b64encode(
+#             new_content.encode()).decode()  # If it's a string, encode it
+#     else:
+#         encoded_content = base64.b64encode(
+#             new_content).decode()  # If it's bytes, use directly
 
-    data = {
-        "message": f"Updating {file_path}",
-        "content": encoded_content,
-        "branch": branch
-    }
+#     data = {
+#         "message": f"Updating {file_path}",
+#         "content": encoded_content,
+#         "branch": branch
+#     }
 
-    if sha:
-        data["sha"] = sha  # Needed for updating an existing file
+#     if sha:
+#         data["sha"] = sha  # Needed for updating an existing file
 
-    response = requests.put(url, headers=headers, json=data)
+#     response = requests.put(url, headers=headers, json=data)
 
-    if response.status_code in [200, 201]:
-        print(f"✅ Write Success: {file_path}")
-        return "Write operation successful!"
-    else:
-        print(
-            f"❌ Error Writing File: {response.status_code} - {response.text}")
-        return None
+#     if response.status_code in [200, 201]:
+#         print(f"✅ Write Success: {file_path}")
+#         return "Write operation successful!"
+#     else:
+#         print(
+#             f"❌ Error Writing File: {response.status_code} - {response.text}")
+#         return None
 
 
 def github_replace_text(token, repo, file_path, pattern, replacement, branch="main"):
@@ -240,22 +240,104 @@ def GA2_3(question):
     return "https://23f2002205.github.io/my-site/"
 
 
+# async def GA2_6_file(file: UploadFile = File(...)):
+#     """
+#     Upload a file via FastAPI and write it to GitHub.
+#     """
+#     file_content = await file.read()  # Read the uploaded file content
+
+#     file_path_on_github = f"q-vercel-python.json"  # Define GitHub path
+
+#     # Upload the file to GitHub
+#     response = github_write_file(
+#         token, "23f2002205/api", file_path_on_github, file_content)
+
+#     print({"message": "File uploaded successfully!", "github_response": response})
+#     time.sleep(10)
+#     return True
+
+# =============== ==== =  = = = = = = = == = = = = = = = ==  == = = == = = = = 
+import base64
+import time
+import asyncio
+import requests
+from fastapi import FastAPI, File, UploadFile
+
+# app = FastAPI()
+
+GITHUB_TOKEN = token
+GITHUB_REPO = "23f2002205/api"
+
 async def GA2_6_file(file: UploadFile = File(...)):
     """
     Upload a file via FastAPI and write it to GitHub.
     """
     file_content = await file.read()  # Read the uploaded file content
 
-    file_path_on_github = f"q-vercel-python.json"  # Define GitHub path
+    if not file_content:
+        return {"error": "No content provided!"}
+
+    file_path_on_github = "q-vercel-python.json"  # GitHub file path
 
     # Upload the file to GitHub
     response = github_write_file(
-        token, "23f2002205/api", file_path_on_github, file_content)
+        GITHUB_TOKEN, GITHUB_REPO, file_path_on_github, file_content)
 
     print({"message": "File uploaded successfully!", "github_response": response})
-    time.sleep(10)
-    return True
+    
+    await asyncio.sleep(10)  # Non-blocking delay
 
+    return {"success": True, "github_response": response}
+
+
+def github_write_file(token, repo, file_path, new_content, branch="main", retries=3):
+    """
+    Writes (creates or updates) a file in GitHub.
+    Retries on failure and increases timeout to prevent 504 errors.
+    """
+    url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    sha = get_github_file_sha(token, repo, file_path, branch)
+    encoded_content = base64.b64encode(new_content).decode()
+
+    data = {
+        "message": f"Updating {file_path}",
+        "content": encoded_content,
+        "branch": branch
+    }
+    if sha:
+        data["sha"] = sha  # Required for updating an existing file
+
+    # Retry mechanism to handle network issues and rate limits
+    for attempt in range(retries):
+        response = requests.put(url, headers=headers, json=data, timeout=120)
+
+        if response.status_code in [200, 201]:
+            print(f"✅ Write Success: {file_path}")
+            return "Write operation successful!"
+        else:
+            print(f"❌ Error ({response.status_code}): {response.text}")
+            time.sleep(5)  # Wait before retrying
+
+    return None  # Return failure after max retries
+
+
+def get_github_file_sha(token, repo, file_path, branch="main"):
+    """
+    Get the SHA of a file on GitHub (required for updating an existing file).
+    """
+    url = f"https://api.github.com/repos/{repo}/contents/{file_path}?ref={branch}"
+    headers = {"Authorization": f"token {token}"}
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json().get("sha")
+    return None
+# ======================================================================
 
 async def GA2_9_file(file: UploadFile = File(...)):
     """
